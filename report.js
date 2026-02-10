@@ -95,7 +95,7 @@ window.saveLiveGraphReport = function() {
     let assets = [];
     window.master.sigs.forEach(sig => {
         let d = getDist(stop.lat, stop.lng, conv(getVal(sig,['Lat'])), conv(getVal(sig,['Lng'])));
-        if (d <= 2000) assets.push({ n: getVal(sig,['SIGNAL_NAME']), d: Math.round(d) });
+        if (d <= 2100) assets.push({ n: getVal(sig,['SIGNAL_NAME']), d: Math.round(d) });
     });
 
     var h = `<!DOCTYPE html><html><head><title>Braking Analysis</title><script src="https://cdn.jsdelivr.net/npm/chart.js"></script><style>
@@ -104,7 +104,6 @@ window.saveLiveGraphReport = function() {
         #chart-wrap { height:450px; width:100%; position:relative; }
         button { padding:12px 30px; background:#ffc107; border:none; border-radius:5px; font-weight:bold; cursor:pointer; margin-top:15px; }
         #info { font-family:monospace; color:#00ff00; font-size:18px; margin-bottom:15px; }
-        .asset-label { position:absolute; top:0; color:red; font-size:10px; transform: rotate(-90deg); }
     </style></head><body><div class="container">
     <div id="info">Stop Time: ${stop.time} | Distance: 2000m | Speed: --</div>
     <div id="chart-wrap"><canvas id="chart"></canvas></div>
@@ -121,12 +120,16 @@ window.saveLiveGraphReport = function() {
             plugins: { legend:{display:false} }
         }
     });
-    // Asset Drawing
-    chart.options.plugins.afterDraw = (c) => {
-        let ctx = c.ctx; assets.forEach(a => {
-            let x = c.scales.x.getPixelForValue(a.d);
-            ctx.strokeStyle = 'red'; ctx.setLineDash([5, 5]); ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, c.height); ctx.stroke();
-            ctx.fillStyle = 'yellow'; ctx.fillText(a.n, x+2, 20);
+    const originalDraw = chart.draw;
+    chart.draw = function() {
+        originalDraw.apply(this, arguments);
+        let ctx = this.ctx;
+        assets.forEach(a => {
+            let x = this.scales.x.getPixelForValue(a.d);
+            if(x >= this.scales.x.left && x <= this.scales.x.right) {
+                ctx.strokeStyle = 'red'; ctx.setLineDash([5, 5]); ctx.beginPath(); ctx.moveTo(x, this.scales.y.top); ctx.lineTo(x, this.scales.y.bottom); ctx.stroke();
+                ctx.fillStyle = 'yellow'; ctx.save(); ctx.translate(x-2, this.scales.y.top + 10); ctx.rotate(-Math.PI/2); ctx.fillText(a.n, 0, 0); ctx.restore();
+            }
         });
     };
     document.getElementById('chart').onclick = () => { isPlaying = !isPlaying; };
