@@ -58,6 +58,7 @@ function generateLiveMap() {
                 window.rtis.push({lt, lg, spd: spd, raw: row}); 
                 path.push([lt, lg]); 
                 
+                // Stopage identification logic
                 if (spd < 1 && !isStopped) {
                     window.stopages.push({
                         idx: window.rtis.length - 1,
