@@ -35,10 +35,19 @@ window.onload = function() {
         document.getElementById('s_from').innerHTML = opt; document.getElementById('s_to').innerHTML = opt;
     }});
     
-    const sigFiles = [{f:'up_signals.csv', t:'UP', c:'green'}, {f:'dn_signals.csv', t:'DN', c:'blue'}, {f:'up_mid_signals.csv', t:'UP_MID', c:'purple'}, {f:'dn_mid_signals.csv', t:'DN_MID', c:'red'}];
+    const sigFiles = [
+        {f:'up_signals.csv', t:'UP', c:'green'}, 
+        {f:'dn_signals.csv', t:'DN', c:'blue'}, 
+        {f:'up_mid_signals.csv', t:'UP_MID', c:'purple'}, 
+        {f:'dn_mid_signals.csv', t:'DN_MID', c:'red'}
+    ];
     sigFiles.forEach(cfg => {
         Papa.parse("master/"+cfg.f+"?v="+ts, {download:true, header:true, complete: r => {
-            r.data.forEach(s => { s.clr = cfg.c; s.type = cfg.t; window.master.sigs.push(s); });
+            r.data.forEach(s => { 
+                if(getVal(s, ['SIGNAL_NAME'])) {
+                    s.clr = cfg.c; s.type = cfg.t; window.master.sigs.push(s); 
+                }
+            });
         }});
     });
 };
@@ -58,7 +67,6 @@ function generateLiveMap() {
                 window.rtis.push({lt, lg, spd: spd, raw: row}); 
                 path.push([lt, lg]); 
                 
-                // Stopage Detection logic (Nearest to 0 kmph first event)
                 if (spd < 1) {
                     if (!isCurrentlyStopped) {
                         window.stopages.push({
@@ -77,7 +85,6 @@ function generateLiveMap() {
         L.polyline(path, {color: '#333', weight: 5}).addTo(map);
         map.fitBounds(path);
 
-        // Update Stopage Dropdown with nearest Signal name
         let stopOpt = window.stopages.map((s, i) => {
             let near = window.master.sigs.reduce((prev, curr) => {
                 let d = Math.sqrt(Math.pow(conv(getVal(curr,['Lat']))-s.lat,2) + Math.pow(conv(getVal(curr,['Lng']))-s.lng,2));
@@ -87,7 +94,6 @@ function generateLiveMap() {
         }).join('');
         document.getElementById('stopage_list').innerHTML = stopOpt || '<option>No Stops Found</option>';
 
-        // Dashboard Hover Logic
         map.on('mousemove', function(e) {
             let minDist = 0.0003, speed = "0.0", time = "--:--:--"; 
             window.rtis.forEach(p => {
@@ -98,7 +104,6 @@ function generateLiveMap() {
             document.getElementById('live-time').innerText = time;
         });
 
-        // Signalling Visuals logic
         let stnF = window.master.stns.find(s => getVal(s,['Station_Name']) === document.getElementById('s_from').value);
         let stnT = window.master.stns.find(s => getVal(s,['Station_Name']) === document.getElementById('s_to').value);
         let sLg1 = conv(getVal(stnF,['Start_Lng'])), sLg2 = conv(getVal(stnT,['Start_Lng']));
