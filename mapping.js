@@ -1,5 +1,6 @@
 window.master = { stns: [], sigs: [] };
 window.rtis = [];
+window.stopages = [];
 
 const map = L.map('map').setView([21.15, 79.12], 11);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
@@ -47,32 +48,42 @@ function generateLiveMap() {
     if(!f) return alert("Select RTIS CSV!");
     
     Papa.parse(f, {header:true, skipEmptyLines:true, complete: function(res) {
-        window.rtis = []; let path = [];
-        res.data.forEach(row => {
+        window.rtis = []; window.stopages = []; let path = [];
+        res.data.forEach((row, index) => {
             let lt = parseFloat(getVal(row,['Latitude','Lat'])), lg = parseFloat(getVal(row,['Longitude','Lng']));
+            let spd = parseFloat(getVal(row,['Speed','Spd']));
             if(!isNaN(lt)) { 
-                window.rtis.push({lt, lg, spd: parseFloat(getVal(row,['Speed','Spd'])), raw: row}); 
+                window.rtis.push({lt, lg, spd: spd, raw: row}); 
                 path.push([lt, lg]); 
+                
+                // Stopage Detection logic (Speed < 1)
+                if (spd < 1) {
+                    let lastStop = window.stopages[window.stopages.length - 1];
+                    if (!lastStop || (window.rtis.length - lastStop.idx > 50)) {
+                        window.stopages.push({
+                            idx: window.rtis.length - 1,
+                            time: getVal(row, ['Logging Time','Time']) || "N/A",
+                            lat: lt, lng: lg
+                        });
+                    }
+                }
             }
         });
 
         L.polyline(path, {color: '#333', weight: 5}).addTo(map);
         map.fitBounds(path);
 
-        // Track Click Logic
-        map.on('click', function(e) {
-            let minDist = 0.0005, p = null;
-            window.rtis.forEach(pt => {
-                let d = Math.sqrt(Math.pow(pt.lt-e.latlng.lat, 2) + Math.pow(pt.lg-e.latlng.lng, 2));
-                if(d < minDist) { minDist = d; p = pt; }
-            });
-            if(p) {
-                let t = getVal(p.raw, ['Logging Time','Time']) || "N/A";
-                L.popup().setLatLng(e.latlng).setContent("<b>Speed:</b> "+p.spd.toFixed(1)+" Kmph<br><b>Time:</b> "+t).openOn(map);
-            }
-        });
+        // Update Stopage Dropdown with nearest Signal/Station name
+        let stopOpt = window.stopages.map((s, i) => {
+            let near = window.master.sigs.reduce((prev, curr) => {
+                let d = Math.sqrt(Math.pow(conv(getVal(curr,['Lat']))-s.lat,2) + Math.pow(conv(getVal(curr,['Lng']))-s.lng,2));
+                return (d < prev.d) ? {n: getVal(curr,['SIGNAL_NAME']), d: d} : prev;
+            }, {n: "Station/Signal", d: 999});
+            return `<option value="${i}">${s.time} - Near ${near.n}</option>`;
+        }).join('');
+        document.getElementById('stopage_list').innerHTML = stopOpt || '<option>No Stops Detected</option>';
 
-        // Dashboard Hover Logic
+        // Dashboard and Signalling logic (Same as existing)
         map.on('mousemove', function(e) {
             let minDist = 0.0003, speed = "0.0", time = "--:--:--"; 
             window.rtis.forEach(p => {
@@ -92,13 +103,12 @@ function generateLiveMap() {
         window.master.sigs.forEach(sig => {
             let sLt = conv(getVal(sig,['Lat'])), sLg = conv(getVal(sig,['Lng']));
             if(!sLt || !sig.type.startsWith(dir) || sLg < minLg || sLg > maxLg) return;
-            
             let spd = getAccurateSpd(sLt, sLg);
             if(spd !== "N/A") {
                 L.circleMarker([sLt, sLg], {radius: 6, color: sig.clr}).addTo(map).bindTooltip(getVal(sig,['SIGNAL_NAME'])+" | "+spd);
                 L.marker([sLt-0.0004, sLg], {icon: L.divIcon({className:'speed-tag', html:Math.round(spd), iconSize:[26,14]})}).addTo(map);
             }
         });
-        document.getElementById('log').innerText = "Map Ready for " + stnF.Station_Name + " to " + stnT.Station_Name;
+        document.getElementById('log').innerText = "Map Ready. Stops Identified: " + window.stopages.length;
     }});
 }
