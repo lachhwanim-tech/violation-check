@@ -44,7 +44,7 @@ window.saveInteractiveWebReport = function() {
 
 window.saveLiveGraphReport = function() {
     let sIdx = document.getElementById('stopage_list').value;
-    if (sIdx === "" || !window.stopages[sIdx]) return alert("Select a stop first!");
+    if (sIdx === "" || !window.stopages[sIdx]) return alert("Select a stopage first!");
     let stop = window.stopages[sIdx];
 
     function getDist(lat1, lon1, lat2, lon2) {
@@ -66,12 +66,39 @@ window.saveLiveGraphReport = function() {
     }
     graphData.reverse();
 
+    // Direction calculation for filtering
+    var stnF = document.getElementById('s_from').value;
+    var stnT = document.getElementById('s_to').value;
+    var masterF = window.master.stns.find(function(s) { return getVal(s,['Station_Name']) === stnF; });
+    var masterT = window.master.stns.find(function(s) { return getVal(s,['Station_Name']) === stnT; });
+    var lg1 = conv(getVal(masterF,['Start_Lng'])), lg2 = conv(getVal(masterT,['Start_Lng']));
+    var dir = (lg2 > lg1) ? "DN" : "UP";
+
     let assets = [];
-    window.master.sigs.forEach(sig => {
-        let sLt = conv(getVal(sig,['Lat'])), sLg = conv(getVal(sig,['Lng']));
-        if(!sLt) return;
-        let d = getDist(stop.lat, stop.lng, sLt, sLg);
-        if (d <= 2000) assets.push({ n: getVal(sig,['SIGNAL_NAME']), d: Math.round(d) });
+    window.master.sigs.forEach(function(sig) {
+        var name = getVal(sig, ['SIGNAL_NAME']);
+        var sLt = conv(getVal(sig, ['Lat'])), sLg = conv(getVal(sig, ['Lng']));
+        if (!sLt || !name) return;
+        
+        // Exact Web Report matching logic (radius 0.002)
+        var match = window.rtis.filter(function(p) { 
+            return Math.sqrt(Math.pow(p.lt-sLt, 2) + Math.pow(p.lg-sLg, 2)) < 0.002; 
+        });
+        
+        if (match.length > 0) {
+            match.sort(function(a,b) { 
+                return Math.sqrt(Math.pow(a.lt-sLt,2)+Math.pow(a.lg-sLg,2)) - Math.sqrt(Math.pow(b.lt-sLt,2)+Math.pow(b.lg-sLg,2)); 
+            });
+            
+            let bestMatch = match[0];
+            let d = getDist(stop.lat, stop.lng, bestMatch.lt, bestMatch.lg);
+            let bIdx = window.rtis.indexOf(bestMatch);
+            
+            // Filtering by direction and distance (UP/DN based on track)
+            if (sig.type.startsWith(dir) && d <= 2000 && bIdx <= stop.idx) {
+                assets.push({ n: name, d: Math.round(d) });
+            }
+        }
     });
 
     var h = `<!DOCTYPE html><html><head><title>Braking Analysis</title><script src="https://cdn.jsdelivr.net/npm/chart.js"></script><style>
@@ -90,20 +117,22 @@ window.saveLiveGraphReport = function() {
     let isPlaying = false, idx = 0;
     const chart = new Chart(document.getElementById('chart'), {
         type: 'line', 
-        data: { datasets: [{ data:[], borderColor:'#00ff00', borderWidth:3, fill:true, backgroundColor:'rgba(0,255,0,0.05)', pointRadius:0 }] },
+        data: { datasets: [{ data:[], borderColor:'#00ff00', borderWidth:3, fill:true, backgroundColor:'rgba(0,255,0,0.05)', pointRadius:0, tension:0.1 }] },
         options: { responsive:true, maintainAspectRatio:false, 
             scales: { x:{ type:'linear', min:0, max:2000, reverse:true, title:{display:true, text:'Distance (M)', color:'#888'} }, y:{ min:0, max:120, title:{display:true, text:'Speed (Kmph)', color:'#888'} } },
             plugins: { legend:{display:false} }
         },
         plugins: [{
             id:'assetLines',
-            afterDraw:(c)=>{
-                const {ctx, scales:{x, y}} = c; ctx.save();
+            afterDraw:(chart)=>{
+                const {ctx, scales:{x, y}} = chart; ctx.save();
                 assets.forEach(a=>{
                     let xP = x.getPixelForValue(a.d);
                     if(xP >= x.left && xP <= x.right){
-                        ctx.strokeStyle='#ff4444'; ctx.setLineDash([6,4]); ctx.beginPath(); ctx.moveTo(xP, y.top); ctx.lineTo(xP, y.bottom); ctx.stroke();
-                        ctx.fillStyle='#ffc107'; ctx.save(); ctx.translate(xP-5, y.top+10); ctx.rotate(-Math.PI/2); ctx.fillText(a.n + " ("+a.d+"m)", 0,0); ctx.restore();
+                        ctx.strokeStyle='#ff4444'; ctx.setLineDash([6,4]); ctx.lineWidth = 2;
+                        ctx.beginPath(); ctx.moveTo(xP, y.top); ctx.lineTo(xP, y.bottom); ctx.stroke();
+                        ctx.fillStyle='#ffc107'; ctx.save(); ctx.translate(xP-5, y.top+10); ctx.rotate(-Math.PI/2);
+                        ctx.font = 'bold 12px Arial'; ctx.fillText(a.n + " ("+a.d+"m)", 0,0); ctx.restore();
                     }
                 }); ctx.restore();
             }
@@ -119,6 +148,6 @@ window.saveLiveGraphReport = function() {
     }
     </script></body></html>`;
     var blob = new Blob([h], {type: 'text/html'});
-    var a = document.createElement('a'); a.download = "Braking_Graph_" + stop.time.replace(/:/g,'-') + ".html";
+    var a = document.createElement('a'); a.download = "Braking_Analysis_" + stop.time.replace(/:/g,'-') + ".html";
     a.href = URL.createObjectURL(blob); a.click();
 };
