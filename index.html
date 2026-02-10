@@ -18,6 +18,7 @@
             color: #00ff00; padding: 15px; border-radius: 10px; border: 2px solid #444;
             z-index: 2000; font-family: 'Courier New', monospace; min-width: 150px; text-align: center;
         }
+        label { font-size: 12px; color: #ffc107; font-weight: bold; display: block; margin-bottom: 5px; }
     </style>
 </head>
 <body>
@@ -34,13 +35,17 @@
     <label>FROM STATION</label><select id="s_from"></select>
     <label>TO STATION</label><select id="s_to"></select>
     <label>RTIS DATA (CSV)</label><input type="file" id="csv_file">
-    <label>SELECT STOPAGE (Speed < 1)</label>
-<select id="stopage_list" style="border: 2px solid #ffc107; background: #fff; color: #000;"></select>
+    
     <button onclick="generateLiveMap()" style="background: #28a745;">1. Generate Map</button>
     <button onclick="downloadExcelAudit()" style="background: #007bff;">2. Download Excel</button>
     <button onclick="saveInteractiveWebReport()" style="background: #ffc107; color: #000;">3. Save Web Report</button>
+    
+    <hr style="border: 0.5px solid #444; margin: 20px 0;">
+    
+    <label>SELECT STOPAGE (Speed < 1)</label>
+    <select id="stopage_list" style="border: 2px solid #ffc107; background: #fff; color: #000;"></select>
     <button onclick="saveLiveGraphReport()" style="background: #e83e8c;">4. Save Graph Report</button>
-    <button onclick="saveLiveGraphReport()" style="background: #e83e8c;">4. Save Graph Report</button>
+    
     <div id="log">Status: Ready. Please load RTIS file.</div>
 </div>
 
