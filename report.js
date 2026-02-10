@@ -32,17 +32,40 @@ window.saveInteractiveWebReport = function() {
     if (!window.rtis || window.rtis.length === 0) return alert("Pehle Step 1: Map Generate karein!");
     var stnF = document.getElementById('s_from').value;
     var stnT = document.getElementById('s_to').value;
+    var masterF = window.master.stns.find(function(s) { return getVal(s,['Station_Name']) === stnF; });
+    var masterT = window.master.stns.find(function(s) { return getVal(s,['Station_Name']) === stnT; });
+    var lg1 = conv(getVal(masterF,['Start_Lng'])), lg2 = conv(getVal(masterT,['Start_Lng']));
+    var minLg = Math.min(lg1, lg2), maxLg = Math.max(lg1, lg2);
+    var dir = (lg2 > lg1) ? "DN" : "UP";
+
+    var reportSigs = [];
+    window.master.sigs.forEach(function(sig) {
+        var name = getVal(sig, ['SIGNAL_NAME']);
+        var sLt = conv(getVal(sig, ['Lat'])), sLg = conv(getVal(sig, ['Lng']));
+        if (!sig.type.startsWith(dir) || sLg < minLg || sLg > maxLg || name.includes("NS")) return;
+        var match = window.rtis.filter(function(p) { return Math.sqrt(Math.pow(p.lt-sLt, 2) + Math.pow(p.lg-sLg, 2)) < 0.002; });
+        if (match.length > 0) {
+            match.sort(function(a,b) { return Math.sqrt(Math.pow(a.lt-sLt,2)+Math.pow(a.lg-sLg,2)) - Math.sqrt(Math.pow(b.lt-sLt,2)+Math.pow(b.lg-sLg,2)); });
+            reportSigs.push({ n: name, s: match[0].spd.toFixed(1), t: getVal(match[0].raw, ['Logging Time','Time']) || "N/A", lt: sLt, lg: sLg, seq: window.rtis.indexOf(match[0]) });
+        }
+    });
+    reportSigs.sort(function(a,b) { return a.seq - b.seq; });
+
     var pathData = JSON.stringify(window.rtis.map(function(p) { return {lt: p.lt, lg: p.lg, s: p.spd.toFixed(1), t: (getVal(p.raw,['Logging Time','Time'])||"")}; }));
-    
-    // Header with Custom Name Tag
+    var listHtml = "";
+    reportSigs.forEach(function(r) {
+        listHtml += '<div class="item" onclick="flyToSig(' + r.lt + ',' + r.lg + ')"><b>' + r.n + '</b><span class="spd">' + r.s + ' Kmph</span><br><small>' + r.t + '</small></div>';
+    });
+
     var h = '<!DOCTYPE html><html><head><title>Audit: <M.lachhhwani/CLI/TELOC/BMY></title><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />';
-    h += '<style>body{margin:0;display:flex;height:100vh;flex-direction:column;} #header{background:#002f6c;color:white;padding:10px;text-align:center;font-weight:bold;} #map{flex-grow:1;}</style></head><body>';
-    h += '<div id="header">SECR AUDIT REPORT - <M.lachhhwani/CLI/TELOC/BMY></div>';
-    h += '<div id="map"></div>';
+    h += '<style>body{margin:0;display:flex;height:100vh;font-family:sans-serif;} #sidebar{width:320px;background:#002f6c;color:white;overflow-y:auto;padding:15px;border-right:2px solid #ffc107;} #map{flex-grow:1;} .item{background:rgba(255,255,255,0.1);padding:10px;margin-bottom:5px;border-radius:4px;cursor:pointer;border-left:4px solid #ffc107;transition:0.2s;} .item:hover{background:rgba(255,255,255,0.2);} .spd{color:#00ff00;font-weight:bold;float:right;}</style></head><body>';
+    h += '<div id="sidebar"><h3>Audit Report<br><small><M.lachhhwani/CLI/TELOC/BMY></small></h3><hr>' + listHtml + '</div><div id="map"></div>';
     h += '<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script>';
     h += 'var m = L.map("map").setView([21.15, 79.12], 13); L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(m);';
-    h += 'var fullPath = ' + pathData + '; var pLine = L.polyline(fullPath.map(function(d){return [d.lt,d.lg]}), {color:"#333", weight:4}).addTo(m); m.fitBounds(pLine.getBounds());</script></body></html>';
-    
+    h += 'var fullPath = ' + pathData + '; var pLine = L.polyline(fullPath.map(function(d){return [d.lt,d.lg]}), {color:"#333", weight:4}).addTo(m); if(fullPath.length > 0) m.fitBounds(pLine.getBounds());';
+    h += 'm.on("click", function(e){ var minDist=0.0005, p=null; fullPath.forEach(function(pt){ var d=Math.sqrt(Math.pow(pt.lt-e.latlng.lat,2)+Math.pow(pt.lg-e.latlng.lng,2)); if(d<minDist){minDist=d;p=pt;} }); if(p){ L.popup().setLatLng(e.latlng).setContent("Speed: "+p.s+" Kmph<br>Time: "+p.t).openOn(m); } });';
+    h += 'var sigs = ' + JSON.stringify(reportSigs) + '; sigs.forEach(function(s){ L.circleMarker([s.lt, s.lg], {radius:7, color:"blue"}).addTo(m).bindTooltip(s.n+" ("+s.s+" Kmph)"); }); function flyToSig(lt, lg) { m.setView([lt, lg], 16); }</script></body></html>';
+
     var blob = new Blob([h], {type: 'text/html'});
     var link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = "Audit_" + stnF + ".html"; link.click();
 };
@@ -61,7 +84,6 @@ window.saveLiveGraphReport = function() {
 
     let graphData = [];
     let lastMaxDist = 0;
-    // Graph Data Creation
     for (let i = stop.idx; i >= 0; i--) {
         let d = getDist(stop.lat, stop.lng, window.rtis[i].lt, window.rtis[i].lg);
         if (d > 2050) break;
@@ -81,34 +103,29 @@ window.saveLiveGraphReport = function() {
 
     let assets = [];
     
-    // --- UPDATED ASSET MAPPING LOGIC (Same as Web Report) ---
+    // --- GRAPH ASSET MAPPING (Replicates Web Report Logic) ---
     window.master.sigs.forEach(function(sig) {
         var name = getVal(sig, ['SIGNAL_NAME']);
         var sLt = conv(getVal(sig, ['Lat'])), sLg = conv(getVal(sig, ['Lng']));
         if (!sLt || !name) return;
         
-        // 1. Check Direction first
         if (!sig.type.startsWith(dir)) return;
 
-        // 2. Check if this signal is near ANY point in our Graph Data (0-2000m range)
-        // This replaces the direct "Distance from Stop" check which fails on curves
+        // Radius Check against Graph Path
         let closestGraphPoint = null;
         let minGeoDist = 999;
-
         graphData.forEach(gp => {
             let geoDist = Math.sqrt(Math.pow(gp.lat - sLt, 2) + Math.pow(gp.lng - sLg, 2));
-            if (geoDist < 0.002 && geoDist < minGeoDist) {
+            if (geoDist < 0.002 && geoDist < minGeoDist) { 
                 minGeoDist = geoDist;
                 closestGraphPoint = gp;
             }
         });
 
-        // 3. If a match is found within 200m radius
         if (closestGraphPoint) {
              assets.push({ n: name, d: closestGraphPoint.d });
         }
     });
-    // -------------------------------------------------------
 
     var h = `<!DOCTYPE html><html><head><title>Braking: <M.lachhhwani/CLI/TELOC/BMY></title><script src="https://cdn.jsdelivr.net/npm/chart.js"></script><style>
         body { background:#111; color:#fff; font-family:sans-serif; padding:20px; text-align:center; }
@@ -143,8 +160,16 @@ window.saveLiveGraphReport = function() {
                     if(xP >= x.left && xP <= x.right){
                         ctx.strokeStyle='#ff4444'; ctx.setLineDash([6,4]); ctx.lineWidth = 2;
                         ctx.beginPath(); ctx.moveTo(xP, y.top); ctx.lineTo(xP, y.bottom); ctx.stroke();
-                        ctx.fillStyle='#ffc107'; ctx.save(); ctx.translate(xP-5, y.top+10); ctx.rotate(-Math.PI/2);
-                        ctx.font = 'bold 12px Arial'; ctx.fillText(a.n + " ("+a.d+"m)", 0,0); ctx.restore();
+                        
+                        // TEXT ROTATION (90 Degree: Top to Bottom)
+                        ctx.fillStyle='#ffc107'; 
+                        ctx.save(); 
+                        ctx.translate(xP+4, y.top+5); 
+                        ctx.rotate(Math.PI/2); 
+                        ctx.font = 'bold 12px Arial'; 
+                        ctx.textAlign = 'left';
+                        ctx.fillText(a.n + " ("+a.d+"m)", 0,0); 
+                        ctx.restore();
                     }
                 }); ctx.restore();
             }
