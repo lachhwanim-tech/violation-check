@@ -33,11 +33,16 @@ window.saveInteractiveWebReport = function() {
     var stnF = document.getElementById('s_from').value;
     var stnT = document.getElementById('s_to').value;
     var pathData = JSON.stringify(window.rtis.map(function(p) { return {lt: p.lt, lg: p.lg, s: p.spd.toFixed(1), t: (getVal(p.raw,['Logging Time','Time'])||"")}; }));
-    var h = '<!DOCTYPE html><html><head><title>Audit Report</title><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />';
-    h += '<style>body{margin:0;display:flex;height:100vh;} #map{flex-grow:1;}</style></head><body><div id="map"></div>';
+    
+    // Header with Custom Name Tag
+    var h = '<!DOCTYPE html><html><head><title>Audit: <M.lachhhwani/CLI/TELOC/BMY></title><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />';
+    h += '<style>body{margin:0;display:flex;height:100vh;flex-direction:column;} #header{background:#002f6c;color:white;padding:10px;text-align:center;font-weight:bold;} #map{flex-grow:1;}</style></head><body>';
+    h += '<div id="header">SECR AUDIT REPORT - <M.lachhhwani/CLI/TELOC/BMY></div>';
+    h += '<div id="map"></div>';
     h += '<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script>';
     h += 'var m = L.map("map").setView([21.15, 79.12], 13); L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(m);';
     h += 'var fullPath = ' + pathData + '; var pLine = L.polyline(fullPath.map(function(d){return [d.lt,d.lg]}), {color:"#333", weight:4}).addTo(m); m.fitBounds(pLine.getBounds());</script></body></html>';
+    
     var blob = new Blob([h], {type: 'text/html'});
     var link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = "Audit_" + stnF + ".html"; link.click();
 };
@@ -56,11 +61,12 @@ window.saveLiveGraphReport = function() {
 
     let graphData = [];
     let lastMaxDist = 0;
+    // Graph Data Creation
     for (let i = stop.idx; i >= 0; i--) {
         let d = getDist(stop.lat, stop.lng, window.rtis[i].lt, window.rtis[i].lg);
         if (d > 2050) break;
         if (d >= lastMaxDist) {
-            graphData.push({ d: Math.round(d), s: window.rtis[i].spd, t: getVal(window.rtis[i].raw, ['Logging Time','Time']) });
+            graphData.push({ d: Math.round(d), s: window.rtis[i].spd, t: getVal(window.rtis[i].raw, ['Logging Time','Time']), lat: window.rtis[i].lt, lng: window.rtis[i].lg });
             lastMaxDist = d;
         }
     }
@@ -74,40 +80,49 @@ window.saveLiveGraphReport = function() {
     var dir = (lg2 > lg1) ? "DN" : "UP";
 
     let assets = [];
+    
+    // --- UPDATED ASSET MAPPING LOGIC (Same as Web Report) ---
     window.master.sigs.forEach(function(sig) {
         var name = getVal(sig, ['SIGNAL_NAME']);
         var sLt = conv(getVal(sig, ['Lat'])), sLg = conv(getVal(sig, ['Lng']));
         if (!sLt || !name) return;
         
-        var match = window.rtis.filter(function(p) { 
-            return Math.sqrt(Math.pow(p.lt-sLt, 2) + Math.pow(p.lg-sLg, 2)) < 0.002; 
-        });
-        
-        if (match.length > 0) {
-            match.sort(function(a,b) { 
-                return Math.sqrt(Math.pow(a.lt-sLt,2)+Math.pow(a.lg-sLg,2)) - Math.sqrt(Math.pow(b.lt-sLt,2)+Math.pow(b.lg-sLg,2)); 
-            });
-            
-            let bestMatch = match[0];
-            let d = getDist(stop.lat, stop.lng, bestMatch.lt, bestMatch.lg);
-            let bIdx = window.rtis.indexOf(bestMatch);
-            
-            if (sig.type.startsWith(dir) && d <= 2000 && bIdx <= stop.idx) {
-                assets.push({ n: name, d: Math.round(d) });
+        // 1. Check Direction first
+        if (!sig.type.startsWith(dir)) return;
+
+        // 2. Check if this signal is near ANY point in our Graph Data (0-2000m range)
+        // This replaces the direct "Distance from Stop" check which fails on curves
+        let closestGraphPoint = null;
+        let minGeoDist = 999;
+
+        graphData.forEach(gp => {
+            let geoDist = Math.sqrt(Math.pow(gp.lat - sLt, 2) + Math.pow(gp.lng - sLg, 2));
+            if (geoDist < 0.002 && geoDist < minGeoDist) {
+                minGeoDist = geoDist;
+                closestGraphPoint = gp;
             }
+        });
+
+        // 3. If a match is found within 200m radius
+        if (closestGraphPoint) {
+             assets.push({ n: name, d: closestGraphPoint.d });
         }
     });
+    // -------------------------------------------------------
 
-    var h = `<!DOCTYPE html><html><head><title>Braking Analysis</title><script src="https://cdn.jsdelivr.net/npm/chart.js"></script><style>
+    var h = `<!DOCTYPE html><html><head><title>Braking: <M.lachhhwani/CLI/TELOC/BMY></title><script src="https://cdn.jsdelivr.net/npm/chart.js"></script><style>
         body { background:#111; color:#fff; font-family:sans-serif; padding:20px; text-align:center; }
         .container { max-width:1100px; margin:auto; background:#1a1a1a; padding:20px; border-radius:12px; border:1px solid #333; }
         #chart-wrap { height:500px; width:100%; margin-top:10px; }
         #info { font-family:monospace; color:#00ff00; font-size:20px; margin-bottom:15px; background:rgba(0,0,0,0.5); padding:10px; }
+        .watermark { color: #555; font-size: 12px; margin-top: 5px; }
         button { padding:15px 40px; background:#ffc107; border:none; cursor:pointer; font-weight:bold; }
     </style></head><body><div class="container">
+    <h3>Braking Analysis - <M.lachhhwani/CLI/TELOC/BMY></h3>
     <div id="info">Distance: 2000m | Speed: -- | Time: --</div>
     <div id="chart-wrap"><canvas id="chart"></canvas></div>
     <button onclick="play()">PLAY / PAUSE</button>
+    <div class="watermark">Generated by SECR Audit Tool - <M.lachhhwani/CLI/TELOC/BMY></div>
     </div><script>
     const data = ${JSON.stringify(graphData)};
     const assets = ${JSON.stringify(assets)};
