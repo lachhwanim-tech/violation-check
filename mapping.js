@@ -49,6 +49,8 @@ function generateLiveMap() {
     
     Papa.parse(f, {header:true, skipEmptyLines:true, complete: function(res) {
         window.rtis = []; window.stopages = []; let path = [];
+        let isCurrentlyStopped = false;
+
         res.data.forEach((row, index) => {
             let lt = parseFloat(getVal(row,['Latitude','Lat'])), lg = parseFloat(getVal(row,['Longitude','Lng']));
             let spd = parseFloat(getVal(row,['Speed','Spd']));
@@ -56,16 +58,18 @@ function generateLiveMap() {
                 window.rtis.push({lt, lg, spd: spd, raw: row}); 
                 path.push([lt, lg]); 
                 
-                // Stopage Detection logic (Speed < 1)
+                // Stopage Detection logic (Nearest to 0 kmph first event)
                 if (spd < 1) {
-                    let lastStop = window.stopages[window.stopages.length - 1];
-                    if (!lastStop || (window.rtis.length - lastStop.idx > 50)) {
+                    if (!isCurrentlyStopped) {
                         window.stopages.push({
                             idx: window.rtis.length - 1,
                             time: getVal(row, ['Logging Time','Time']) || "N/A",
-                            lat: lt, lng: lg
+                            lat: lt, lng: lg, spd: spd
                         });
+                        isCurrentlyStopped = true; 
                     }
+                } else if (spd > 5) { 
+                    isCurrentlyStopped = false; 
                 }
             }
         });
@@ -73,17 +77,17 @@ function generateLiveMap() {
         L.polyline(path, {color: '#333', weight: 5}).addTo(map);
         map.fitBounds(path);
 
-        // Update Stopage Dropdown with nearest Signal/Station name
+        // Update Stopage Dropdown with nearest Signal name
         let stopOpt = window.stopages.map((s, i) => {
             let near = window.master.sigs.reduce((prev, curr) => {
                 let d = Math.sqrt(Math.pow(conv(getVal(curr,['Lat']))-s.lat,2) + Math.pow(conv(getVal(curr,['Lng']))-s.lng,2));
                 return (d < prev.d) ? {n: getVal(curr,['SIGNAL_NAME']), d: d} : prev;
-            }, {n: "Station/Signal", d: 999});
-            return `<option value="${i}">${s.time} - Near ${near.n}</option>`;
+            }, {n: "Location", d: 999});
+            return `<option value="${i}">${s.time} | Spd:${s.spd} | Near: ${near.n}</option>`;
         }).join('');
-        document.getElementById('stopage_list').innerHTML = stopOpt || '<option>No Stops Detected</option>';
+        document.getElementById('stopage_list').innerHTML = stopOpt || '<option>No Stops Found</option>';
 
-        // Dashboard and Signalling logic (Same as existing)
+        // Dashboard Hover Logic
         map.on('mousemove', function(e) {
             let minDist = 0.0003, speed = "0.0", time = "--:--:--"; 
             window.rtis.forEach(p => {
@@ -94,6 +98,7 @@ function generateLiveMap() {
             document.getElementById('live-time').innerText = time;
         });
 
+        // Signalling Visuals logic
         let stnF = window.master.stns.find(s => getVal(s,['Station_Name']) === document.getElementById('s_from').value);
         let stnT = window.master.stns.find(s => getVal(s,['Station_Name']) === document.getElementById('s_to').value);
         let sLg1 = conv(getVal(stnF,['Start_Lng'])), sLg2 = conv(getVal(stnT,['Start_Lng']));
@@ -109,6 +114,6 @@ function generateLiveMap() {
                 L.marker([sLt-0.0004, sLg], {icon: L.divIcon({className:'speed-tag', html:Math.round(spd), iconSize:[26,14]})}).addTo(map);
             }
         });
-        document.getElementById('log').innerText = "Map Ready. Stops Identified: " + window.stopages.length;
+        document.getElementById('log').innerText = "Map Ready. Stops Detected: " + window.stopages.length;
     }});
 }
