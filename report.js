@@ -66,7 +66,6 @@ window.saveLiveGraphReport = function() {
     }
     graphData.reverse();
 
-    // Direction calculation for filtering
     var stnF = document.getElementById('s_from').value;
     var stnT = document.getElementById('s_to').value;
     var masterF = window.master.stns.find(function(s) { return getVal(s,['Station_Name']) === stnF; });
@@ -80,7 +79,6 @@ window.saveLiveGraphReport = function() {
         var sLt = conv(getVal(sig, ['Lat'])), sLg = conv(getVal(sig, ['Lng']));
         if (!sLt || !name) return;
         
-        // Exact Web Report matching logic (radius 0.002)
         var match = window.rtis.filter(function(p) { 
             return Math.sqrt(Math.pow(p.lt-sLt, 2) + Math.pow(p.lg-sLg, 2)) < 0.002; 
         });
@@ -94,7 +92,6 @@ window.saveLiveGraphReport = function() {
             let d = getDist(stop.lat, stop.lng, bestMatch.lt, bestMatch.lg);
             let bIdx = window.rtis.indexOf(bestMatch);
             
-            // Filtering by direction and distance (UP/DN based on track)
             if (sig.type.startsWith(dir) && d <= 2000 && bIdx <= stop.idx) {
                 assets.push({ n: name, d: Math.round(d) });
             }
