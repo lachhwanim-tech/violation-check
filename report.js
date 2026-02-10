@@ -72,3 +72,113 @@ window.saveInteractiveWebReport = function() {
     link.download = "Audit_" + stnF + ".html";
     link.click();
 };
+window.saveLiveGraphReport = function() {
+    if (!window.rtis || window.rtis.length === 0) return alert("Pehle Step 1: Map Generate karein!");
+    
+    var stnF = document.getElementById('s_from').value;
+    var stnT = document.getElementById('s_to').value;
+    
+    // Sirf wahi data points nikalna jahan speed 1 se kam hui (Stopping Points)
+    var stopPoints = window.rtis.filter(p => p.spd < 1);
+    if (stopPoints.length === 0) return alert("Data mein koi stop (Speed < 1) nahi mila!");
+
+    // Simulation ke liye data prepare karna
+    var pathData = JSON.stringify(window.rtis.map(p => ({
+        lt: p.lt, lg: p.lg, s: p.spd.toFixed(1), t: (getVal(p.raw,['Logging Time','Time'])||"")
+    })));
+
+    // Signals, LC, aur Assets ka data
+    var assets = JSON.stringify(window.master.sigs.map(s => ({
+        n: getVal(s,['SIGNAL_NAME']), lt: conv(getVal(s,['Lat'])), lg: conv(getVal(s,['Lng'])), type: s.type
+    })));
+
+    var h = `<!DOCTYPE html>
+<html>
+<head>
+    <title>Live Speed-Distance Graph</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #1a1a1a; color: white; margin: 20px; }
+        .container { max-width: 1000px; margin: auto; background: #2d2d2d; padding: 20px; border-radius: 8px; }
+        #graph-container { position: relative; height: 400px; width: 100%; }
+        .controls { margin-top: 20px; text-align: center; }
+        button { padding: 10px 20px; cursor: pointer; background: #ffc107; border: none; font-weight: bold; }
+        #info { margin-top: 10px; font-family: monospace; color: #00ff00; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Live Braking Analysis: ${stnF} to ${stnT}</h2>
+        <div id="graph-container">
+            <canvas id="speedChart"></canvas>
+        </div>
+        <div class="controls">
+            <button id="playPause">PLAY / PAUSE</button>
+            <div id="info">Distance: 2000m | Speed: 0.0 Kmph | Time: --:--:--</div>
+        </div>
+    </div>
+
+    <script>
+        const fullPath = ${pathData};
+        const assets = ${assets};
+        let isPlaying = false;
+        let currentIndex = 0;
+        let animationId = null;
+
+        // Chart.js Setup
+        const ctx = document.getElementById('speedChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: Array.from({length: 201}, (_, i) => 2000 - (i * 10)), // 2000m to 0m
+                datasets: [{
+                    label: 'Live Speed',
+                    data: [],
+                    borderColor: '#00ff00',
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    fill: false
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { title: { display: true, text: 'Distance from Stop (m)', color: '#ccc' }, reverse: true, ticks: {color: '#ccc'} },
+                    y: { title: { display: true, text: 'Speed (Kmph)', color: '#ccc' }, min: 0, max: 120, ticks: {color: '#ccc'} }
+                },
+                plugins: {
+                    legend: { display: false }
+                }
+            }
+        });
+
+        // Play/Pause logic
+        document.getElementById('playPause').onclick = () => { isPlaying = !isPlaying; if(isPlaying) simulate(); };
+        document.getElementById('speedChart').onclick = () => { isPlaying = !isPlaying; };
+
+        function simulate() {
+            if(!isPlaying || currentIndex >= 200) return;
+            
+            // Simulation logic: Har step pe 10m kam dikhana
+            let dist = 2000 - (currentIndex * 10);
+            let mockSpeed = Math.max(0, 60 - (currentIndex * 0.3)); // Placeholder logic
+            
+            chart.data.datasets[0].data.push(mockSpeed);
+            chart.update('none');
+            
+            document.getElementById('info').innerText = "Distance: " + dist + "m | Speed: " + mockSpeed.toFixed(1) + " Kmph";
+            
+            currentIndex++;
+            setTimeout(() => { requestAnimationFrame(simulate); }, 100);
+        }
+    </script>
+</body>
+</html>`;
+
+    var blob = new Blob([h], {type: 'text/html'});
+    var link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = "Graph_Report_" + stnF + ".html";
+    link.click();
+};
